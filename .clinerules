@@ -331,3 +331,38 @@ After completing a task that changes the system state:
 ### Response Constraint
 
 When reading/writing memory bank files, state only the reason for the action (e.g., "Loading activeContext.md to check current state"). Do not output long explanations about the memory bank itself. Proceed to the actual task immediately.
+
+## Discord 通知ルール
+
+### 基本方針
+
+各タスクの作業中、以下のタイミングで `discord-notifier__notify_discord` ツールを使用して通知を送信すること。
+
+- **status**: 成功時は `success`、問題発生時は `stuck` を指定する。
+- **summary**: 1行の日本語要約（最大100文字）。
+
+### 通知タイミング
+
+1. **タスク開始時**: `status=success`, `summary=絵文字 + "タスク開始: " + タスク名`
+2. **マイルストーン到達時**: `status=success`, `summary=絵文字 + "進捗: " + 達成内容`
+3. **タスク完了時**: `status=success`, `summary=絵文字 + "タスク完了: " + 成果要約`
+4. **問題発生時**: `status=stuck`, `summary=絵文字 + "問題発生: " + 問題要約`
+
+### 推奨絵文字
+
+| 状況 | 絵文字 |
+|------|--------|
+| 開始 | 🚀 |
+| 進捗 | 📊 |
+| 完了 | ✅ |
+| 問題 | ⚠️ |
+| ビルド成功 | 🔨 |
+| ビルド失敗 | ❌ |
+| テスト成功 | 🧪 |
+| テスト失敗 | 💥 |
+
+### 注意事項
+
+- `summary` は1行最大100文字以内に収めること。
+- テスト結果やビルドの成否、経過時間を必ず含めること。
+- 例: `"✅ タスク完了: Liteテスト通過 (3/3, 45秒), Mediumテスト通過 (5/5, 98秒), Pixhawk6Cビルド成功 (62秒)"`
