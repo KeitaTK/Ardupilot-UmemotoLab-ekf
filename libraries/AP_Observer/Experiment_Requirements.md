@@ -250,64 +250,42 @@
 
 ## 3. 実装チェックリスト
 
-### 3.1 AP_Observer側の修正（`libraries/AP_Observer/`）
+> **ステータス**: ✅ 実装完了 (2026-05-25)  
+> コミット: `a10c7f5906` (AP_Observer), `2cc8c8b372` (UserCode)
 
-- [ ] `AP_Observer.h`:
-  - [ ] `void set_control_enabled(bool enabled)` メソッド宣言を追加
-  - [ ] `void reset_ekf_to_initial_state()` メソッド宣言を追加
-  - [ ] `bool _control_enabled` メンバ変数を追加（デフォルト `true`: Observerはデフォルトで有効）
-  - [ ] `bool _ekf_reset_triggered` メンバ変数を追加（ログ用ワンショットフラグ、デフォルト `false`）
+### 3.1 AP_Observer側の修正（`libraries/AP_Observer/`） ✅
 
-- [ ] `AP_Observer.cpp`:
-  - [ ] `init()` で `_control_enabled = true` に初期化
-  - [ ] `set_control_enabled(bool enabled)` の実装: `_control_enabled = enabled`
-  - [ ] `reset_ekf_to_initial_state()` の実装:
+- [x] `AP_Observer.h`:
+  - [x] `void set_control_enabled(bool enabled)` メソッド宣言を追加
+  - [x] `void reset_ekf_to_initial_state()` メソッド宣言を追加
+  - [x] `bool _control_enabled` メンバ変数を追加（デフォルト `true`: Observerはデフォルトで有効）
+  - [x] `bool _ekf_reset_triggered` メンバ変数を追加（ログ用ワンショットフラグ、デフォルト `false`）
+
+- [x] `AP_Observer.cpp`:
+  - [x] `init()` で `_control_enabled = true` に初期化
+  - [x] `set_control_enabled(bool enabled)` の実装: `_control_enabled = enabled`
+  - [x] `reset_ekf_to_initial_state()` の実装:
     - 全軸 (X, Y, Z) で `ekf_state[axis][3] = _ekf_omega_init`
     - `ekf_P` の全要素を0クリア後、対角成分を `EKF_INIT_COVARIANCE` (10.0) に設定
+    - 各軸の診断変数と fade 変数もリセット
     - `_ekf_reset_triggered = true` をセット
-  - [ ] `update()` 内の補正出力部:
-    ```cpp
-    if (!_control_enabled) {
-        current_correction_quat.initialise();  // 単位クォータニオン
-        current_correction_euler.zero();        // ゼロベクトル
-    }
-    // EKFのpredict/updateは _control_enabled に関わらず常に実行
-    ```
-  - [ ] `Write_Observer_Log()` に以下を追加:
-    - `uint8_t ctrl_ena = _control_enabled ? 1 : 0;` をユニットに追加
-    - `uint8_t ekf_res = _ekf_reset_triggered ? 1 : 0;` をユニットに追加
-    - `_ekf_reset_triggered = false;` でフラグをクリア（ワンショット）
+    - GCS メッセージ送信
+  - [x] `update()` 内の補正出力部: `_control_enabled == false` 時に単位クォータニオン/ゼロベクトル出力
+  - [x] `Write_Observer_Log()` に `CE` (CtrlEna), `ER` (EKFRes) フィールド追加、ワンショットクリア
 
-### 3.2 ArduCopter側の修正（`ArduCopter/`）
+### 3.2 ArduCopter側の修正（`ArduCopter/`） ✅
 
-- [ ] `UserCode.cpp`:
-  - [ ] `userhook_auxSwitch1()` に実装:
-    ```cpp
-    void Copter::userhook_auxSwitch1(const RC_Channel::AuxSwitchPos ch_flag)
-    {
-        const bool enable = (ch_flag == RC_Channel::AuxSwitchPos::HIGH);
-        observer.set_control_enabled(enable);
-    }
-    ```
-  - [ ] `userhook_auxSwitch2()` に実装:
-    ```cpp
-    void Copter::userhook_auxSwitch2(const RC_Channel::AuxSwitchPos ch_flag)
-    {
-        static RC_Channel::AuxSwitchPos prev = RC_Channel::AuxSwitchPos::LOW;
-        if (prev == RC_Channel::AuxSwitchPos::HIGH && ch_flag == RC_Channel::AuxSwitchPos::LOW) {
-            observer.reset_ekf_to_initial_state();
-        }
-        prev = ch_flag;
-    }
-    ```
+- [x] `UserCode.cpp`:
+  - [x] `userhook_auxSwitch1()`: CH7 3ポジションスイッチ → HIGHのみON
+  - [x] `userhook_auxSwitch2()`: CH8 モーメンタリスイッチ → HIGH→LOWエッジでリセット
 
-### 3.3 ビルド・テスト
+### 3.3 ビルド・テスト ✅
 
-- [ ] SITLビルドが通ること (`./waf configure --board sitl && ./waf build --target bin/arducopter`)
-- [ ] Liteオートテスト (`test.CopterObserver`) が通ること
-- [ ] Mediumオートテスト (`test.CopterMedium`) が通ること
-- [ ] Pixhawk6C クリーンビルドが通ること
-- [ ] 実機テスト項目:
+- [x] SITLビルド (`./waf configure --board sitl && ./waf build --target bin/arducopter`)
+- [x] Liteオートテスト (`test.CopterObserver`) → 3/3 PASSED (6.14s)
+- [x] Mediumオートテスト (`test.CopterMedium`) → 7/7 PASSED (19.85s)
+- [x] Pixhawk6C クリーンビルド → 成功 (arducopter.bin 1.6MB)
+- [ ] 実機テスト項目（未実施）:
   - [ ] CH7=LOW/MIDDLE → `CtrlEna=0` が OBSV ログに記録されること
   - [ ] CH7=HIGH → `CtrlEna=1` が OBSV ログに記録され、補正が出力されること
   - [ ] CH8 モーメンタリ押下 → `EKFRes=1` が OBSV ログに記録され、推定周波数が初期値にリセットされること
@@ -407,3 +385,51 @@
 │ CH11 : Guidedモード    (2ポジションスイッチ)     │
 │ CH12-16: (予備・未使用)                         │
 └─────────────────────────────────────────────────┘
+
+---
+
+## 付録B: MCP ツール実装詳細
+
+### B.1 ardupilot-dev-tools MCP サーバー
+
+全 MCP ツール (`build_sitl`, `run_autotest_lite`, `run_autotest_medium`, `run_autotest_full`, `build_pixhawk6c`, `run_ci_pipeline`) は Docker コンテナ内でコマンドを実行し、結果を要約して返す。
+
+**リポジトリ**: `https://github.com/KeitaTK/mcp-servers` (`ardupilot-dev-tools/main.py`)
+
+**修正履歴**:
+| コミット | 内容 |
+|----------|------|
+| `3fb4149f` | 初版 |
+| `c3793f1c` | autotest 偽陽性修正、PASSED 検出修正、ログクリーンアップ追加 |
+| `5218763b` | コマンド実行ログを `/home/taki/buildlogs/mcp/` に保存 |
+
+### B.2 実行ログ
+
+全 MCP ツール実行時の stdout/stderr が以下に保存される:
+
+```
+/home/taki/buildlogs/mcp/
+├── 20260525_005334_run_autotest_lite.log
+├── 20260525_005410_build_sitl.log
+└── ...
+```
+
+- ファイル名形式: `YYYYMMDD_HHMMSS_<tool_name>.log`
+- 先頭に日時が来るため `ls` で実行順に自動ソートされる
+- 各ファイルの先頭に実行コマンドとタイムスタンプをヘッダとして記録
+
+### B.3 Docker 環境
+
+`/home/taki/Ardupilot-Docker/docker/docker-compose.yml` の `ardupilot-dev` サービスに
+`/home/taki/buildlogs` のバインドマウントを追加:
+
+```yaml
+volumes:
+  - /home/taki/buildlogs:/home/taki/buildlogs
+```
+
+コンテナ内パッケージ:
+- `pymavlink` 2.4.42 (ローカル submodule からインストール)
+- `empy` 3.3.4
+- `pexpect`, `ptyprocess`, `mavproxy`
+- `python` → `python3` symlink
