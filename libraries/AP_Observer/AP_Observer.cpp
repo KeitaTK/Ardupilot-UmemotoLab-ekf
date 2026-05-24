@@ -134,6 +134,7 @@ void AP_Observer::init() {
     _payload_filtered = Vector3f();
     _energy_band_proxy = Vector3f();
     filter_initialized = true;
+    _control_enabled = true;
 
     // EKF初期化
     ekf_init();
@@ -189,6 +190,57 @@ void AP_Observer::reset_frequency_estimation() {
     
 #if HAL_GCS_ENABLED
     gcs().send_text(MAV_SEVERITY_INFO, "AP_Observer: Frequency reset to %.3fHz (EKF)", (double)(_ekf_omega_init.get() / (2.0f * M_PI)));
+#endif
+}
+
+void AP_Observer::set_control_enabled(bool enabled) {
+    _control_enabled = enabled;
+}
+
+void AP_Observer::reset_ekf_to_initial_state() {
+    const float init_cov = EKF_INIT_COVARIANCE;
+    const float init_omega = constrain_value(_ekf_omega_init.get(), _ekf_omega_min.get(), _ekf_omega_max.get());
+
+    for (uint8_t axis = 0; axis < EKF_NUM_AXES; axis++) {
+        // Reset frequency state only (keep d, d_dot, c as-is)
+        ekf_state[axis][3] = init_omega;
+
+        // Reset covariance matrix to diag(EKF_INIT_COVARIANCE)
+        for (uint8_t i = 0; i < EKF_STATE_SIZE; i++) {
+            for (uint8_t j = 0; j < EKF_STATE_SIZE; j++) {
+                ekf_P[axis][i][j] = (i == j) ? init_cov : 0.0f;
+            }
+        }
+
+        // Reset per-axis diagnostic variables
+        ekf_axis_innovation[axis] = 0.0f;
+        ekf_axis_nis[axis] = 0.0f;
+        ekf_axis_amp[axis] = 0.0f;
+        ekf_axis_force_abs[axis] = 0.0f;
+        ekf_axis_energy_power[axis] = 0.0f;
+        ekf_axis_energy_trusted[axis] = 0U;
+        ekf_axis_omega_updated[axis] = 0U;
+        ekf_axis_hold_omega[axis] = 0U;
+        ekf_axis_p00[axis] = 0.0f;
+        ekf_axis_p22[axis] = 0.0f;
+        ekf_axis_s[axis] = 0.0f;
+        ekf_axis_k0[axis] = 0.0f;
+        ekf_axis_k2[axis] = 0.0f;
+        ekf_axis_dbg_valid[axis] = 0U;
+
+        // Reset fade control variables
+        _fade_timer[axis] = 0.0f;
+        _fade_gain[axis] = 1.0f;
+    }
+
+    // Mark reset triggered for logging
+    _ekf_reset_triggered = true;
+
+    // Maintain ekf_initialized state (do not change it)
+
+#if HAL_GCS_ENABLED
+    gcs().send_text(MAV_SEVERITY_INFO, "AP_Observer: EKF reset to initial frequency %.3fHz",
+                    (double)(init_omega / (2.0f * M_PI)));
 #endif
 }
 
@@ -414,8 +466,15 @@ void AP_Observer::update() {
 
     // EKF予測外力を使用
     current_filtered_force = get_predicted_force();  // Δt秒後の予測外力
-    current_correction_quat = calculate_correction_from_force(current_filtered_force);
-    current_correction_euler = calculate_correction_euler_from_force(current_filtered_force);
+
+    if (!_control_enabled) {
+        // When control is disabled, output identity correction (no attitude change)
+        current_correction_quat = Quaternion(1, 0, 0, 0);
+        current_correction_euler = Vector3f(0, 0, 0);
+    } else {
+        current_correction_quat = calculate_correction_from_force(current_filtered_force);
+        current_correction_euler = calculate_correction_euler_from_force(current_filtered_force);
+    }
     last_update_ms = get_current_time_ms();
 
     // ログをSDカードに記録（毎回記録）
@@ -506,14 +565,15 @@ void AP_Observer::Write_Observer_Log() {
     }
 
     // ログメッセージをカスタムフォーマットで書き込み
-    // OBSV: TimeUS, PLX, PLY, PLZ, PFX, PFY, PFZ, FX, FY, CR, CP, SW
+    // OBSV: TimeUS, PLX, PLY, PLZ, PFX, PFY, PFZ, FX, FY, CR, CP, SW, CE, ER
     // PFX/PFY/PFZ = predicted force from EKF (replaces D, V, C internal states)
     // FX/FY = per-axis estimated frequency (Hz), no fused frequency field
     // CR/CP = correction Euler Roll/Pitch [rad]
+    // CE = control enabled flag, ER = EKF reset triggered flag
     const Vector3f predicted = get_predicted_force();
-    logger->Write("OBSV", "TimeUS,PLX,PLY,PLZ,PFX,PFY,PFZ,FX,FY,CR,CP,SW",
-                  "s-----------", "F-----------",
-                  "QffffffffffB",
+    logger->Write("OBSV", "TimeUS,PLX,PLY,PLZ,PFX,PFY,PFZ,FX,FY,CR,CP,SW,CE,ER",
+                  "s-------------", "F-------------",
+                  "QffffffffffBBB",
                   AP_HAL::micros64(),
                   _payload_filtered.x,
                   _payload_filtered.y,
@@ -525,7 +585,12 @@ void AP_Observer::Write_Observer_Log() {
                   ekf_state[1][3] / (2.0f * M_PI), // FY: Y-axis frequency
                   current_correction_euler.x,       // CR: correction roll [rad]
                   current_correction_euler.y,       // CP: correction pitch [rad]
-                  (uint8_t)1);  // SW: 常にON
+                  (uint8_t)1,                       // SW: 常にON
+                  (uint8_t)_control_enabled,        // CE: control enabled
+                  (uint8_t)_ekf_reset_triggered);   // ER: EKF reset triggered
+
+    // Clear reset trigger flag after logging
+    _ekf_reset_triggered = false;
 
     for (uint8_t axis = 0; axis < 2; axis++) {
         logger->Write("OBEK", "TimeUS,AX,P00,P22,SS,K0,K2,DV",

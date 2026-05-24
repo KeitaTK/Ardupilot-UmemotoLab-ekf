@@ -44,6 +44,12 @@ public:
     
     // 周波数推定のリセット（アーム時に呼び出し）
     void reset_frequency_estimation();
+    
+    // 制御の有効/無効を設定
+    void set_control_enabled(bool enabled);
+    
+    // EKFを初期状態にリセット（状態は維持、周波数・共分散のみ再初期化）
+    void reset_ekf_to_initial_state();
 
 // #ifdef AP_OBSERVER_REPLAY_TEST
     // リプレイテスト用
@@ -149,6 +155,10 @@ private:
     float ekf_axis_k0[OBS_NUM_AXES];
     float ekf_axis_k2[OBS_NUM_AXES];
     uint8_t ekf_axis_dbg_valid[OBS_NUM_AXES];
+
+    // Control and reset flags
+    bool _control_enabled = true;
+    bool _ekf_reset_triggered = false;
 
     // Fade control variables
     float _fade_timer[EKF_NUM_AXES] = {0};
