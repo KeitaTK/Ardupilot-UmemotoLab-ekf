@@ -12,6 +12,53 @@
 | `libraries/AP_Observer/AP_Observer.cpp` | EKF実装、ロバスト化分岐、各軸独立周波数推定 |
 | `libraries/AP_Observer/README.md` | アルゴリズムの数理ドキュメント（設計意図含む） |
 
+## clangd MCP ツールガイド
+
+コードナビゲーション・静的解析のための clangd MCP ツール群が利用可能です。全ツールが `alwaysAllow` に登録済みで、確認なしで呼び出せます。
+
+### ツール一覧と使い分け
+
+| ツール | 機能 | 使うタイミング |
+|--------|------|---------------|
+| `get_document_symbols` | ファイル内の全シンボルを階層構造で列挙（クラス→メソッド→フィールド） | 初見のファイル構造を把握するとき |
+| `get_hover` | カーソル位置のシンボルの型・定義元を表示 | 変数/関数の型や定義場所を調べるとき |
+| `find_definition` | 宣言から実装へジャンプ（.h → .cpp） | ヘッダの宣言に対応する実装を探すとき |
+| `find_references` | シンボルが使われている全箇所を列挙 | 影響範囲分析・リファクタリング前の把握 |
+| `workspace_symbol_search` | 名前で全コードベースを検索 | ファイル位置が不明なシンボルを探すとき |
+| `get_call_hierarchy` | 関数の呼出元（incoming）と呼出先（outgoing）をツリー表示 | 制御フロー・データフローを追うとき |
+| `get_type_hierarchy` | クラスの基底クラス/派生クラスを表示 | 継承関係を把握するとき |
+| `find_implementations` | 仮想メソッドの全具象実装を列挙 | インターフェースの実装一覧が必要なとき（非仮想では空を返す） |
+| `get_diagnostics` | ファイルのコンパイルエラー/警告を取得 | コード変更後のエラーチェック（コンパイル不要） |
+
+### 実用例（AP_Observer コードベース）
+
+```cpp
+// ★ get_document_symbols: AP_Observer.h の全構造を把握
+// → 99シンボル: Class → 25 Methods, 40 Fields, 9 Properties
+
+// ★ find_definition: ekf_update の宣言から実装を探索
+// .h L175: void ekf_update(const Vector3f& y_output, float dt);
+// → .cpp L249: void AP_Observer::ekf_update(...) { ... }
+
+// ★ get_call_hierarchy: ekf_update の呼出関係を追跡
+// incoming:
+//   force_frequency_estimation_update() @ .cpp:613 → call site: L617
+//   update() @ .cpp:432 → call site: L461
+
+// ★ get_hover: フィールドの型を確認
+// _correction_gain → AP_Float = AP_ParamT<float, AP_PARAM_FLOAT>
+
+// ★ get_diagnostics: 変更後のエラー確認
+// AP_Observer.h → errors: 0, warnings: 0
+```
+
+### 注意点
+
+- `get_hover` は複合的なシンボル（多次元配列など）でタイムアウトすることがある。その場合は `find_definition` で定義元を直接読む。
+- `find_references` は型名にヒットすると全使用箇所を返す（例: `AP_Float` にヒット → 666件）。フィールド名自体の参照を見たい時は、正確にフィールド名の位置を指定すること。
+- `find_implementations` は仮想メソッド専用。通常メソッドでは `"No implementations found"` が正常。
+- ファイルパスはコンパイル時に設定された絶対パス（コンテナ内の `/ardupilot/...`）で返ることがある。
+
 ## アーキテクチャ上の重要な意思決定
 
 ### 状態量
