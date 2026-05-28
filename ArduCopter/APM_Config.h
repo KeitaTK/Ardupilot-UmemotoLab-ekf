@@ -42,5 +42,5 @@
 //#define USERHOOK_MEDIUMLOOP userhook_MediumLoop();        // for code to be run at 10hz
 //#define USERHOOK_SLOWLOOP userhook_SlowLoop();            // for code to be run at 3.3hz
 //#define USERHOOK_SUPERSLOWLOOP userhook_SuperSlowLoop();  // for code to be run at 1hz
-//#define USERHOOK_AUXSWITCH 1                        // for code to handle user aux switches
+#define USERHOOK_AUXSWITCH 1                        // for code to handle user aux switches
 //#define USER_PARAMS_ENABLED 1                       // to enable user parameters
