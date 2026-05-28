@@ -202,7 +202,10 @@ void AP_Observer::reset_ekf_to_initial_state() {
     const float init_omega = constrain_value(_ekf_omega_init.get(), _ekf_omega_min.get(), _ekf_omega_max.get());
 
     for (uint8_t axis = 0; axis < EKF_NUM_AXES; axis++) {
-        // Reset frequency state only (keep d, d_dot, c as-is)
+        // Reset all states: d(0), d_dot(1), c(2) to zero, omega(3) to init_omega
+        ekf_state[axis][0] = 0.0f;
+        ekf_state[axis][1] = 0.0f;
+        ekf_state[axis][2] = 0.0f;
         ekf_state[axis][3] = init_omega;
 
         // Reset covariance matrix to diag(EKF_INIT_COVARIANCE)

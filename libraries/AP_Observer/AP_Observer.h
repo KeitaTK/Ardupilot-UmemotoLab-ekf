@@ -48,7 +48,7 @@ public:
     // 制御の有効/無効を設定
     void set_control_enabled(bool enabled);
     
-    // EKFを初期状態にリセット（状態は維持、周波数・共分散のみ再初期化）
+    // EKFを初期状態にリセット（d, d_dot, cはゼロ、omegaは初期周波数、共分散は再初期化）
     void reset_ekf_to_initial_state();
 
 // #ifdef AP_OBSERVER_REPLAY_TEST
