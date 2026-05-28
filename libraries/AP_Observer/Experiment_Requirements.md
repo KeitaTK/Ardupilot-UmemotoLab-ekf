@@ -196,10 +196,11 @@
       - LOW→HIGH の立ち上がりでは発動しない：スイッチを押しっぱなしにしても連続リセットは発生しない。
       - HIGH→HIGH の連続でも発動しない：スイッチを押しっぱなし→次のフレームでも発動しない。
     - **リセット内容**:
-        1. 内部の `ekf_state[axis][3]`（周波数成分 $\omega$）をパラメータの初期値 `_ekf_omega_init` にリセット
-        2. 共分散行列 `ekf_P`（4x4）を初期状態にリセット: 対角成分 = `EKF_INIT_COVARIANCE` (10.0)、非対角成分 = 0
-        3. 全軸 (X, Y, Z) の EKF 状態を同時にリセット（Z軸はEKF更新をスキップしているが、状態管理の一貫性のため）
-        4. `ekf_initialized` フラグは維持する（再初期化に `ekf_init()` を使うのではなく、`reset_ekf_to_initial_state()` メソッドを新設）
+        1. 内部の `ekf_state[axis][0]` (振幅 $d$), `ekf_state[axis][1]` (位相 $\dot{d}$), `ekf_state[axis][2]` (DCオフセット $c$) をすべて `0.0f` にリセット（ゼロ知識からの完全コールドスタート）
+        2. 内部の `ekf_state[axis][3]`（周波数成分 $\omega$）をパラメータの初期値 `_ekf_omega_init` にリセット
+        3. 共分散行列 `ekf_P`（4x4）を初期状態にリセット: 対角成分 = `EKF_INIT_COVARIANCE` (10.0)、非対角成分 = 0
+        4. 全軸 (X, Y, Z) の EKF 状態を同時にリセット
+        5. `ekf_initialized` フラグ等は維持しつつ、実質的に既存の `ekf_init()` と同等の状態クリアを行う。
     - **リセット通知**: リセットが発生したフレームで OBSV ログの `EKFRes` フィールドに 1 を記録（次のフレームでは 0 に戻るワンショットフラグ）
 
 *   **実装詳細**:
@@ -250,42 +251,65 @@
 
 ## 3. 実装チェックリスト
 
-> **ステータス**: ✅ 実装完了 (2026-05-25)  
-> コミット: `a10c7f5906` (AP_Observer), `2cc8c8b372` (UserCode)
+### 3.1 AP_Observer側の修正（`libraries/AP_Observer/`）
 
-### 3.1 AP_Observer側の修正（`libraries/AP_Observer/`） ✅
+- [ ] `AP_Observer.h`:
+  - [ ] `void set_control_enabled(bool enabled)` メソッド宣言を追加
+  - [ ] `void reset_ekf_to_initial_state()` メソッド宣言を追加
+  - [ ] `bool _control_enabled` メンバ変数を追加（デフォルト `true`: Observerはデフォルトで有効）
+  - [ ] `bool _ekf_reset_triggered` メンバ変数を追加（ログ用ワンショットフラグ、デフォルト `false`）
 
-- [x] `AP_Observer.h`:
-  - [x] `void set_control_enabled(bool enabled)` メソッド宣言を追加
-  - [x] `void reset_ekf_to_initial_state()` メソッド宣言を追加
-  - [x] `bool _control_enabled` メンバ変数を追加（デフォルト `true`: Observerはデフォルトで有効）
-  - [x] `bool _ekf_reset_triggered` メンバ変数を追加（ログ用ワンショットフラグ、デフォルト `false`）
-
-- [x] `AP_Observer.cpp`:
-  - [x] `init()` で `_control_enabled = true` に初期化
-  - [x] `set_control_enabled(bool enabled)` の実装: `_control_enabled = enabled`
-  - [x] `reset_ekf_to_initial_state()` の実装:
+- [ ] `AP_Observer.cpp`:
+  - [ ] `init()` で `_control_enabled = true` に初期化
+  - [ ] `set_control_enabled(bool enabled)` の実装: `_control_enabled = enabled`
+  - [ ] `reset_ekf_to_initial_state()` の実装:
+    - 全軸 (X, Y, Z) で `ekf_state[axis][0]`, `[1]`, `[2]` を `0.0f` にリセット
     - 全軸 (X, Y, Z) で `ekf_state[axis][3] = _ekf_omega_init`
     - `ekf_P` の全要素を0クリア後、対角成分を `EKF_INIT_COVARIANCE` (10.0) に設定
-    - 各軸の診断変数と fade 変数もリセット
     - `_ekf_reset_triggered = true` をセット
-    - GCS メッセージ送信
-  - [x] `update()` 内の補正出力部: `_control_enabled == false` 時に単位クォータニオン/ゼロベクトル出力
-  - [x] `Write_Observer_Log()` に `CE` (CtrlEna), `ER` (EKFRes) フィールド追加、ワンショットクリア
+  - [ ] `update()` 内の補正出力部:
+    ```cpp
+    if (!_control_enabled) {
+        current_correction_quat.initialise();  // 単位クォータニオン
+        current_correction_euler.zero();        // ゼロベクトル
+    }
+    // EKFのpredict/updateは _control_enabled に関わらず常に実行
+    ```
+  - [ ] `Write_Observer_Log()` に以下を追加:
+    - `uint8_t ctrl_ena = _control_enabled ? 1 : 0;` をユニットに追加
+    - `uint8_t ekf_res = _ekf_reset_triggered ? 1 : 0;` をユニットに追加
+    - `_ekf_reset_triggered = false;` でフラグをクリア（ワンショット）
 
-### 3.2 ArduCopter側の修正（`ArduCopter/`） ✅
+### 3.2 ArduCopter側の修正（`ArduCopter/`）
 
-- [x] `UserCode.cpp`:
-  - [x] `userhook_auxSwitch1()`: CH7 3ポジションスイッチ → HIGHのみON
-  - [x] `userhook_auxSwitch2()`: CH8 モーメンタリスイッチ → HIGH→LOWエッジでリセット
+- [ ] `UserCode.cpp`:
+  - [ ] `userhook_auxSwitch1()` に実装:
+    ```cpp
+    void Copter::userhook_auxSwitch1(const RC_Channel::AuxSwitchPos ch_flag)
+    {
+        const bool enable = (ch_flag == RC_Channel::AuxSwitchPos::HIGH);
+        observer.set_control_enabled(enable);
+    }
+    ```
+  - [ ] `userhook_auxSwitch2()` に実装:
+    ```cpp
+    void Copter::userhook_auxSwitch2(const RC_Channel::AuxSwitchPos ch_flag)
+    {
+        static RC_Channel::AuxSwitchPos prev = RC_Channel::AuxSwitchPos::LOW;
+        if (prev == RC_Channel::AuxSwitchPos::HIGH && ch_flag == RC_Channel::AuxSwitchPos::LOW) {
+            observer.reset_ekf_to_initial_state();
+        }
+        prev = ch_flag;
+    }
+    ```
 
-### 3.3 ビルド・テスト ✅
+### 3.3 ビルド・テスト
 
-- [x] SITLビルド (`./waf configure --board sitl && ./waf build --target bin/arducopter`)
-- [x] Liteオートテスト (`test.CopterObserver`) → 3/3 PASSED (6.14s)
-- [x] Mediumオートテスト (`test.CopterMedium`) → 7/7 PASSED (19.85s)
-- [x] Pixhawk6C クリーンビルド → 成功 (arducopter.bin 1.6MB)
-- [ ] 実機テスト項目（未実施）:
+- [ ] SITLビルドが通ること (`./waf configure --board sitl && ./waf build --target bin/arducopter`)
+- [ ] Liteオートテスト (`test.CopterObserver`) が通ること
+- [ ] Mediumオートテスト (`test.CopterMedium`) が通ること
+- [ ] Pixhawk6C クリーンビルドが通ること
+- [ ] 実機テスト項目:
   - [ ] CH7=LOW/MIDDLE → `CtrlEna=0` が OBSV ログに記録されること
   - [ ] CH7=HIGH → `CtrlEna=1` が OBSV ログに記録され、補正が出力されること
   - [ ] CH8 モーメンタリ押下 → `EKFRes=1` が OBSV ログに記録され、推定周波数が初期値にリセットされること
@@ -319,6 +343,9 @@
 
 ### 5.1 実験A: 周波数収束の観測
 
+**【シナリオの意図】**
+EKFが「間違った初期周波数」から「真の周波数」へ収束していく過程をグラフで明確に示すため、この実験は**最初から最後まで「制御OFF」**で行います。もし制御をONにしてしまうと、周波数を学習する前に揺れ自体が抑え込まれてしまい、推定器の真の収束性能がグラフから読み取れなくなるためです。あえて荷物を長めに揺らし続け、内部の周波数 $\omega$ が真値に漸近していく純粋な推定過程を記録します。
+
 | ステップ | 操作 | CH7 | CH8 |
 |---------|------|-----|-----|
 | 1. 離陸前 | 初期周波数をわざとずらした値にパラメータ設定 | MIDDLE (OFF) | - |
@@ -331,6 +358,9 @@
 
 ### 5.2 実験B: 突発外乱ロバスト性
 
+**【シナリオの意図】**
+突風などのインパルス外乱が加わった際、最も危険なのは「推定器が発散し、ありえない巨大な補正角を出力して機体が暴走すること」です。これを防ぐInnovation Clippingの有効性を証明するため、この実験は**「制御ON」の状態**であえて扇風機や棒でインパルス外乱を与えます。「クリッピング機能のおかげで推定器が発散せず、機体も危険な挙動をせずに耐え、すぐに揺れを抑え込んだ」という実力と安全性を証明します。
+
 | ステップ | 操作 | CH7 | CH8 |
 |---------|------|-----|-----|
 | 1. 離陸・ホバリング | 制御ONで飛行 | **HIGH (ON)** | - |
@@ -339,6 +369,9 @@
 | 4. 繰り返し | ステップ2-3を繰り返す | HIGH (ON) | - |
 
 ### 5.3 実験C: A/Bテスト（制御ON/OFF比較）
+
+**【シナリオの意図】**
+論文において最も説得力があるのは「1つの連続した時間軸（グラフ）の中で効果のBefore/Afterを見せること」です。そのため、最初は**制御OFF**で荷物を揺らし、「何もしないとこれだけ揺れが持続する」という波形を数秒間記録します。その後、飛行中にスイッチで**制御ON**に切り替えた瞬間に波形（揺れのエネルギー）が急速に減衰する様子を1つのグラフに収め、制御の絶対的な有効性を証明します。
 
 | ステップ | 操作 | CH7 | CH8 |
 |---------|------|-----|-----|
@@ -385,51 +418,3 @@
 │ CH11 : Guidedモード    (2ポジションスイッチ)     │
 │ CH12-16: (予備・未使用)                         │
 └─────────────────────────────────────────────────┘
-
----
-
-## 付録B: MCP ツール実装詳細
-
-### B.1 ardupilot-dev-tools MCP サーバー
-
-全 MCP ツール (`build_sitl`, `run_autotest_lite`, `run_autotest_medium`, `run_autotest_full`, `build_pixhawk6c`, `run_ci_pipeline`) は Docker コンテナ内でコマンドを実行し、結果を要約して返す。
-
-**リポジトリ**: `https://github.com/KeitaTK/mcp-servers` (`ardupilot-dev-tools/main.py`)
-
-**修正履歴**:
-| コミット | 内容 |
-|----------|------|
-| `3fb4149f` | 初版 |
-| `c3793f1c` | autotest 偽陽性修正、PASSED 検出修正、ログクリーンアップ追加 |
-| `5218763b` | コマンド実行ログを `/home/taki/buildlogs/mcp/` に保存 |
-
-### B.2 実行ログ
-
-全 MCP ツール実行時の stdout/stderr が以下に保存される:
-
-```
-/home/taki/buildlogs/mcp/
-├── 20260525_005334_run_autotest_lite.log
-├── 20260525_005410_build_sitl.log
-└── ...
-```
-
-- ファイル名形式: `YYYYMMDD_HHMMSS_<tool_name>.log`
-- 先頭に日時が来るため `ls` で実行順に自動ソートされる
-- 各ファイルの先頭に実行コマンドとタイムスタンプをヘッダとして記録
-
-### B.3 Docker 環境
-
-`/home/taki/Ardupilot-Docker/docker/docker-compose.yml` の `ardupilot-dev` サービスに
-`/home/taki/buildlogs` のバインドマウントを追加:
-
-```yaml
-volumes:
-  - /home/taki/buildlogs:/home/taki/buildlogs
-```
-
-コンテナ内パッケージ:
-- `pymavlink` 2.4.42 (ローカル submodule からインストール)
-- `empy` 3.3.4
-- `pexpect`, `ptyprocess`, `mavproxy`
-- `python` → `python3` symlink
