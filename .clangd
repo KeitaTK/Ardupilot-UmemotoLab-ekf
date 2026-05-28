@@ -1,0 +1,10 @@
+CompileFlags:
+  CompilationDatabase: build/sitl
+
+# Pixhawk6C に切り替える場合は以下に変更:
+#   CompilationDatabase: build/Pixhawk6C
+#
+# NOTE: clangd-mcp-server を使う場合、コンテナ起動時に
+# container-entrypoint.sh が自動で compile_commands.json の
+# シンボリックリンクをプロジェクトルートに作成します。
+# ビルドターゲットを切り替えた後はコンテナを再起動してください。
