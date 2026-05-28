@@ -242,7 +242,7 @@ void AP_Observer::reset_ekf_to_initial_state() {
     // Maintain ekf_initialized state (do not change it)
 
 #if HAL_GCS_ENABLED
-    gcs().send_text(MAV_SEVERITY_INFO, "AP_Observer: EKF reset to initial frequency %.3fHz",
+    gcs().send_text(MAV_SEVERITY_INFO, "AP_Observer: EKF reset to frequency %.3fHz",
                     (double)(init_omega / (2.0f * M_PI)));
 #endif
 }

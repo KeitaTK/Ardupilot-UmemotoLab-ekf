@@ -50,6 +50,9 @@ void Copter::userhook_auxSwitch1(const RC_Channel::AuxSwitchPos ch_flag)
     // HIGH=ON, MIDDLE/LOW=OFF
     const bool enable = (ch_flag == RC_Channel::AuxSwitchPos::HIGH);
     observer.set_control_enabled(enable);
+#if HAL_GCS_ENABLED
+    gcs().send_text(MAV_SEVERITY_INFO, "AP_Observer: Control %s", enable ? "ENABLED" : "DISABLED");
+#endif
 }
 
 void Copter::userhook_auxSwitch2(const RC_Channel::AuxSwitchPos ch_flag)
