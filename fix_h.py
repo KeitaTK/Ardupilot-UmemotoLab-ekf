@@ -39,6 +39,7 @@ new_code = """
     AP_Float _out_fade_dly;
     AP_Float _out_fade_in_t;
     AP_Float _out_fade_out_t;
+    AP_Int8 _ekf_w_freeze;
     // -------------------------------------------------------------
 """
 

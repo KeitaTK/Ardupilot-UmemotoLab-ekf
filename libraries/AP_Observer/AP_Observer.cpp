@@ -115,6 +115,13 @@ const AP_Param::GroupInfo AP_Observer::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("FADE_OUT_T", 29, AP_Observer, _out_fade_out_t, 1.0f),
 
+    // @Param: W_FREEZE
+    // @DisplayName: EKF Omega Freeze
+    // @Description: Freeze omega state to initial value (0=disabled, 1=enabled)
+    // @Range: 0 1
+    // @User: Advanced
+    AP_GROUPINFO("W_FREEZE", 30, AP_Observer, _ekf_w_freeze, 0),
+
     AP_GROUPEND
 };
 
@@ -423,6 +430,11 @@ void AP_Observer::ekf_update_axis(uint8_t axis, float measurement, float dt) {
     const float tau = (target_gain > _fade_gain[axis]) ? MAX(1e-3f, _out_fade_in_t.get()) : MAX(1e-3f, _out_fade_out_t.get());
     const float alpha = constrain_value(dt / (dt + tau), 0.0f, 1.0f);
     _fade_gain[axis] += alpha * (target_gain - _fade_gain[axis]);
+
+    if (_ekf_w_freeze != 0) {
+        const float init_omega = constrain_value(_ekf_omega_init.get(), _ekf_omega_min.get(), _ekf_omega_max.get());
+        x[3] = init_omega;
+    }
 
     ekf_axis_omega_updated[axis] = 1U;
 }
