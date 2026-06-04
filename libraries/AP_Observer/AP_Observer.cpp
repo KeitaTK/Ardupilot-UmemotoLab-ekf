@@ -381,6 +381,11 @@ void AP_Observer::ekf_update_axis(uint8_t axis, float measurement, float dt) {
         x[i] = x_pred[i] + K[i] * innov_used;
     }
 
+    // Freeze omega state to initial value if W_FREEZE is enabled
+    if (_ekf_w_freeze.get() != 0) {
+        x[3] = constrain_value(_ekf_omega_init.get(), _ekf_omega_min.get(), _ekf_omega_max.get());
+    }
+
     float KH[EKF_STATE_SIZE][EKF_STATE_SIZE];
     for (uint8_t i = 0; i < EKF_STATE_SIZE; i++) {
         for (uint8_t j = 0; j < EKF_STATE_SIZE; j++) {
@@ -430,11 +435,6 @@ void AP_Observer::ekf_update_axis(uint8_t axis, float measurement, float dt) {
     const float tau = (target_gain > _fade_gain[axis]) ? MAX(1e-3f, _out_fade_in_t.get()) : MAX(1e-3f, _out_fade_out_t.get());
     const float alpha = constrain_value(dt / (dt + tau), 0.0f, 1.0f);
     _fade_gain[axis] += alpha * (target_gain - _fade_gain[axis]);
-
-    if (_ekf_w_freeze != 0) {
-        const float init_omega = constrain_value(_ekf_omega_init.get(), _ekf_omega_min.get(), _ekf_omega_max.get());
-        x[3] = init_omega;
-    }
 
     ekf_axis_omega_updated[axis] = 1U;
 }
